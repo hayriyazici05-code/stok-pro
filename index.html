@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StokPro - Akıllı Stok & Envanter Takip Sistemi (Bulut Senkronize)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Üst Menü / Navbar -->
+    <header class="bg-indigo-600 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-white text-indigo-600 p-2 rounded-lg shadow font-bold text-xl">
+                    <i class="fa-solid fa-boxes-stacked"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight">StokPro</h1>
+                    <p class="text-xs text-indigo-200">Bulut Tabanlı Envanter Yönetimi</p>
+                </div>
+            </div>
+
+            <!-- Bulut Bağlantı Durumu & Ayar Butonu -->
+            <div class="flex items-center gap-3">
+                <div id="cloudStatusBadge" class="flex items-center gap-2 bg-indigo-700 px-3 py-1.5 rounded-full text-xs font-medium border border-indigo-500">
+                    <span id="cloudStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                    <span id="cloudStatusText">Çevrimdışı (Yerel Mod)</span>
+                </div>
+                <button onclick="openCloudModal()" class="bg-indigo-700 hover:bg-indigo-800 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-2 border border-indigo-500">
+                    <i class="fa-solid fa-cloud"></i> Bulut Ayarları
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Ana İçerik Alanı -->
+    <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+
+        <!-- Dashboard Özet Kartları -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase">Toplam Ürün Çeşidi</p>
+                    <h3 id="statTotalItems" class="text-2xl font-bold text-slate-900 mt-1">0</h3>
+                </div>
+                <div class="bg-blue-50 text-blue-600 p-3 rounded-lg"><i class="fa-solid fa-box text-xl"></i></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase">Toplam Stok Adedi</p>
+                    <h3 id="statTotalStock" class="text-2xl font-bold text-slate-900 mt-1">0</h3>
+                </div>
+                <div class="bg-emerald-50 text-emerald-600 p-3 rounded-lg"><i class="fa-solid fa-layer-group text-xl"></i></div>
+            </div>
+            <div onclick="filterCriticalStock()" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer hover:border-amber-400 transition group">
+                <div>
+                    <p class="text-xs font-semibold text-amber-600 uppercase">Kritik Stok Uyarıları</p>
+                    <h3 id="statCritical" class="text-2xl font-bold text-amber-600 mt-1">0</h3>
+                </div>
+                <div class="bg-amber-50 text-amber-600 p-3 rounded-lg group-hover:scale-110 transition"><i class="fa-solid fa-triangle-exclamation text-xl"></i></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase">Toplam Envanter Değeri</p>
+                    <h3 id="statTotalValue" class="text-2xl font-bold text-indigo-600 mt-1">0.00 ₺</h3>
+                </div>
+                <div class="bg-indigo-50 text-indigo-600 p-3 rounded-lg"><i class="fa-solid fa-wallet text-xl"></i></div>
+            </div>
+        </div>
+
+        <!-- Üst İşlem Çubuğu (Arama, Filtreleme, Ekleme Butonları) -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex flex-wrap items-center gap-3 flex-1">
+                <!-- Arama Kutusu -->
+                <div class="relative min-w-[240px] flex-1 sm:flex-none">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400"><i class="fa-solid fa-search"></i></span>
+                    <input type="text" id="searchInput" oninput="renderTable()" placeholder="Ürün adı, kod veya barkod ara..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <!-- Kategori Filtresi -->
+                <select id="categoryFilter" onchange="renderTable()" class="py-2 px-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                    <option value="">Tüm Kategoriler</option>
+                </select>
+            </div>
+
+            <!-- Sağ İşlem Butonları -->
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="openProductModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow-sm">
+                    <i class="fa-solid fa-plus"></i> Yeni Ürün Ekle
+                </button>
+                <button onclick="openMovementModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow-sm">
+                    <i class="fa-solid fa-right-left"></i> Stok Giriş / Çıkış
+                </button>
+                <!-- Yedekleme ve Rapor Menüsü -->
+                <div class="relative">
+                    <button onclick="toggleDropdown('reportDropdown')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                        <i class="fa-solid fa-file-arrow-down"></i> Rapor & Yedek <i class="fa-solid fa-chevron-down text-xs"></i>
+                    </button>
+                    <div id="reportDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-10 py-1">
+                        <a href="#" onclick="exportExcel(); return false;" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-file-excel text-emerald-600 mr-2"></i> Excel / CSV İndir</a>
+                        <a href="#" onclick="exportJSON(); return false;" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-file-code text-blue-600 mr-2"></i> JSON Yedek Al</a>
+                        <label class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                            <i class="fa-solid fa-file-arrow-up text-amber-600 mr-2"></i> Yedek Yükle
+                            <input type="file" accept=".json" onchange="importJSON(event)" class="hidden">
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ana Sekmeler (Stok Listesi & Hareket Geçmişi) -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="border-b border-slate-200 flex">
+                <button onclick="switchTab('products')" id="tabProductsBtn" class="px-6 py-3 font-semibold text-sm border-b-2 border-indigo-600 text-indigo-600 transition flex items-center gap-2">
+                    <i class="fa-solid fa-boxes-stacked"></i> Stok Envanteri
+                </button>
+                <button onclick="switchTab('history')" id="tabHistoryBtn" class="px-6 py-3 font-semibold text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Stok Hareket Geçmişi
+                </button>
+            </div>
+
+            <!-- Sekme 1: Ürünler Tablosu -->
+            <div id="tabProductsContent" class="p-4 overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase bg-slate-50/50">
+                            <th class="p-3">Ürün Adı / Kod</th>
+                            <th class="p-3">Kategori</th>
+                            <th class="p-3">Miktar</th>
+                            <th class="p-3">Birim Fiyat</th>
+                            <th class="p-3">Toplam Değer</th>
+                            <th class="p-3">Raf Konumu</th>
+                            <th class="p-3 text-center">İşlemler</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productTableBody" class="divide-y divide-slate-100 text-sm">
+                        <!-- Dinamik Dolacak -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Sekme 2: Hareket Geçmişi Tablosu -->
+            <div id="tabHistoryContent" class="p-4 overflow-x-auto hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase bg-slate-50/50">
+                            <th class="p-3">Tarih / Saat</th>
+                            <th class="p-3">İşlem Türü</th>
+                            <th class="p-3">Ürün Adı</th>
+                            <th class="p-3">Miktar</th>
+                            <th class="p-3">Cari / Açıklama</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody" class="divide-y divide-slate-100 text-sm">
+                        <!-- Dinamik Dolacak -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal: Bulut Ayarları (Firebase) -->
+    <div id="cloudModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div class="bg-indigo-600 px-6 py-4 text-white flex justify-between items-center">
+                <h3 class="font-bold text-lg"><i class="fa-solid fa-cloud-arrow-up mr-2"></i> Firebase Bulut Ayarları</h3>
+                <button onclick="closeCloudModal()" class="text-indigo-200 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <p class="text-xs text-slate-600">
+                    Tüm cihazlarınız arasında canlı senkronizasyon için Firebase Realtime Database bilgilerinizi girin ve ortak bir kanal kodu belirleyin.
+                </p>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Depo / Şube Kanal Kodu</label>
+                    <input type="text" id="cloudChannel" placeholder="Örn: ana-depo-sube-1" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-[11px] text-slate-500 mt-1">Aynı kanalı kullanan tüm telefon ve bilgisayarlar aynı stoku görür.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Akıllı Config Yapıştır (JSON veya JS)</label>
+                    <textarea id="cloudConfigRaw" rows="4" placeholder="firebaseConfig = { apiKey: '...', ... } veya JSON formatını buraya yapıştırın" class="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-600 uppercase mb-1">API Key</label>
+                        <input type="text" id="cfgApiKey" class="w-full p-2 border border-slate-300 rounded-lg text-xs outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-600 uppercase mb-1">Project ID</label>
+                        <input type="text" id="cfgProjectId" class="w-full p-2 border border-slate-300 rounded-lg text-xs outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-600 uppercase mb-1">Database URL</label>
+                    <input type="text" id="cfgDbUrl" class="w-full p-2 border border-slate-300 rounded-lg text-xs outline-none">
+                </div>
+                <div class="flex items-center justify-between pt-2">
+                    <button onclick="disconnectCloud()" class="text-red-600 hover:text-red-700 text-xs font-semibold px-3 py-2"><i class="fa-solid fa-power-off mr-1"></i> Bağlantıyı Kes</button>
+                    <div class="flex gap-2">
+                        <button onclick="closeCloudModal()" class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm hover:bg-slate-50 font-medium">İptal</button>
+                        <button onclick="saveAndConnectCloud()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow">Bağlan ve Senkronize Et</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Ürün Ekle / Düzenle -->
+    <div id="productModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+            <div class="bg-indigo-600 px-6 py-4 text-white flex justify-between items-center">
+                <h3 id="productModalTitle" class="font-bold text-lg">Yeni Ürün Ekle</h3>
+                <button onclick="closeProductModal()" class="text-indigo-200 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form id="productForm" onsubmit="handleProductSubmit(event)" class="p-6 space-y-4">
+                <input type="hidden" id="editProductId">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ürün Adı *</label>
+                        <input type="text" id="prodName" required class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ürün Kodu / Barkod</label>
+                        <div class="flex gap-1">
+                            <input type="text" id="prodCode" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <button type="button" onclick="generateBarcode()" class="bg-slate-100 hover:bg-slate-200 px-3 rounded-lg text-slate-600 text-xs border border-slate-300" title="Kod Üret"><i class="fa-solid fa-barcode"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Kategori</label>
+                        <div class="flex gap-1">
+                            <select id="prodCategory" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none">
+                                <option value="Genel">Genel</option>
+                            </select>
+                            <button type="button" onclick="addNewCategory()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 rounded-lg text-xs font-bold border border-indigo-200" title="Yeni Kategori"><i class="fa-solid fa-plus"></i></button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Birim</label>
+                        <select id="prodUnit" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none">
+                            <option value="Adet">Adet</option>
+                            <option value="Metre">Metre</option>
+                            <option value="Kilogram">Kilogram</option>
+                            <option value="Kutu">Kutu</option>
+                            <option value="Paket">Paket</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Başlangıç Miktarı</label>
+                        <input type="number" id="prodStock" min="0" value="0" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Birim Fiyat (₺)</label>
+                        <input type="number" id="prodPrice" step="0.01" min="0" value="0" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-amber-600 uppercase mb-1">Kritik Sınır</label>
+                        <input type="number" id="prodCritical" min="0" value="5" class="w-full p-2.5 border border-amber-300 rounded-lg text-sm outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Raf / Depo Konumu</label>
+                    <input type="text" id="prodLocation" placeholder="Örn: Raf A-3" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none">
+                </div>
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="closeProductModal()" class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Detaylı Stok Giriş / Çıkış -->
+    <div id="movementModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div class="bg-emerald-600 px-6 py-4 text-white flex justify-between items-center">
+                <h3 class="font-bold text-lg"><i class="fa-solid fa-right-left mr-2"></i> Stok Hareket İşlemi</h3>
+                <button onclick="closeMovementModal()" class="text-emerald-200 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form onsubmit="handleMovementSubmit(event)" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">İşlem Türü</label>
+                    <select id="movType" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm font-medium bg-white outline-none">
+                        <option value="Giriş">➕ Stok Girişi (Mal Kabul)</option>
+                        <option value="Çıkış">➖ Stok Çıkışı (Satış / Kullanım)</option>
+                        <option value="İade">↩️ Müşteri İadesi</option>
+                        <option value="Fire">⚠️ Fire / Zayi / Hasar</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ürün Seçin *</label>
+                    <select id="movProductId" required class="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none">
+                        <!-- Dinamik Dolacak -->
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Miktar *</label>
+                    <input type="number" id="movQuantity" min="1" value="1" required class="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Cari / Açıklama / Not</label>
+                    <input type="text" id="movNote" placeholder="Örn: Ahmet Bey - Proje Teslimi" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none">
+                </div>
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="closeMovementModal()" class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium shadow">İşlemi Uygula</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript Uygulama Mantığı -->
+    <script>
+        // Veri Yapısı
+        let db = {
+            products: {},
+            categories: ["Genel", "Hırdavat", "Kablolama", "Elektronik", "Güvenlik"],
+            history: []
+        };
+
+        let currentChannel = localStorage.getItem("stokpro_channel") || "ana-depo";
+        let firebaseConfig = JSON.parse(localStorage.getItem("stokpro_fb_config") || "null");
+        let isCloudActive = false;
+        let fbRef = null;
+        let onlyCriticalFilter = false;
+
+        document.getElementById("cloudChannel").value = currentChannel;
+        if (firebaseConfig) {
+            document.getElementById("cfgApiKey").value = firebaseConfig.apiKey || "";
+            document.getElementById("cfgProjectId").value = firebaseConfig.projectId || "";
+            document.getElementById("cfgDbUrl").value = firebaseConfig.databaseURL || "";
+            initFirebase(firebaseConfig);
+        } else {
+            loadLocalData();
+        }
+
+        // --- Veri Depolama & Senkronizasyon ---
+        function loadLocalData() {
+            const saved = localStorage.getItem("stokpro_local_db");
+            if (saved) {
+                try { db = JSON.parse(saved); } catch(e) {}
+            }
+            if(!db.categories) db.categories = ["Genel"];
+            if(!db.products) db.products = {};
+            if(!db.history) db.history = [];
+            refreshAll();
+        }
+
+        function saveData() {
+            if (isCloudActive && fbRef) {
+                fbRef.set(db);
+            } else {
+                localStorage.setItem("stokpro_local_db", JSON.stringify(db));
+            }
+            refreshAll();
+        }
+
+        function initFirebase(config) {
+            try {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(config);
+                }
+                const dbUrl = config.databaseURL;
+                fbRef = firebase.database(firebase.app(), dbUrl).ref("stokpro/" + currentChannel);
+                
+                fbRef.on("value", (snapshot) => {
+                    const serverData = snapshot.val();
+                    if (serverData) {
+                        db = serverData;
+                        if(!db.categories) db.categories = ["Genel"];
+                        if(!db.products) db.products = {};
+                        if(!db.history) db.history = [];
+                    } else {
+                        // Boşsa yerel veriyi buluta gönder
+                        fbRef.set(db);
+                    }
+                    isCloudActive = true;
+                    updateCloudStatus(true);
+                    refreshAll();
+                }, (error) => {
+                    console.error(error);
+                    isCloudActive = false;
+                    updateCloudStatus(false);
+                });
+            } catch (err) {
+                console.error("Firebase hata:", err);
+                isCloudActive = false;
+                updateCloudStatus(false);
+            }
+        }
+
+        function updateCloudStatus(active) {
+            const dot = document.getElementById("cloudStatusDot");
+            const text = document.getElementById("cloudStatusText");
+            if (active) {
+                dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+                text.innerText = "Bulut Senkronize (" + currentChannel + ")";
+            } else {
+                dot.className = "w-2.5 h-2.5 rounded-full bg-amber-400";
+                text.innerText = "Çevrimdışı (Yerel Mod)";
+            }
+        }
+
+        function openCloudModal() { document.getElementById("cloudModal").classList.remove("hidden"); }
+        function closeCloudModal() { document.getElementById("cloudModal").classList.add("hidden"); }
+
+        function saveAndConnectCloud() {
+            currentChannel = document.getElementById("cloudChannel").value.trim() || "ana-depo";
+            localStorage.setItem("stokpro_channel", currentChannel);
+
+            // Raw config metninden akıllı ayrıştırma
+            let rawText = document.getElementById("cloudConfigRaw").value.trim();
+            let apiKey = document.getElementById("cfgApiKey").value.trim();
+            let projectId = document.getElementById("cfgProjectId").value.trim();
+            let databaseURL = document.getElementById("cfgDbUrl").value.trim();
+
+            if (rawText) {
+                try {
+                    // JSON veya JS nesnesi ayıklama
+                    let cleanJson = rawText.replace(/^[a-zA-Z0-9_$]+\s*=\s*/, "").replace(/;\s*$/, "");
+                    let parsed = JSON.parse(cleanJson.replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":'));
+                    apiKey = parsed.apiKey || apiKey;
+                    projectId = parsed.projectId || projectId;
+                    databaseURL = parsed.databaseURL || databaseURL;
+                } catch(e) {
+                    // Regex ile aramalar
+                    const keyMatch = rawText.match(/apiKey["']?\s*:\s*["']([^"']+)["']/);
+                    const projMatch = rawText.match(/projectId["']?\s*:\s*["']([^"']+)["']/);
+                    const urlMatch = rawText.match(/databaseURL["']?\s*:\s*["']([^"']+)["']/);
+                    if(keyMatch) apiKey = keyMatch[1];
+                    if(projMatch) projectId = projMatch[1];
+                    if(urlMatch) databaseURL = urlMatch[1];
+                }
+            }
+
+            if (!apiKey || !databaseURL) {
+                alert("Lütfen geçerli Firebase API Key ve Database URL bilgisi giriniz.");
+                return;
+            }
+
+            firebaseConfig = { apiKey, projectId, databaseURL };
+            localStorage.setItem("stokpro_fb_config", JSON.stringify(firebaseConfig));
+            
+            closeCloudModal();
+            initFirebase(firebaseConfig);
+        }
+
+        function disconnectCloud() {
+            isCloudActive = false;
+            firebaseConfig = null;
+            fbRef = null;
+            localStorage.removeItem("stokpro_fb_config");
+            updateCloudStatus(false);
+            closeCloudModal();
+            loadLocalData();
+        }
+
+        // --- Arayüz Güncelleme & Dashboard ---
+        function refreshAll() {
+            updateCategoriesUI();
+            renderTable();
+            renderHistory();
+            updateStats();
+        }
+
+        function updateCategoriesUI() {
+            const select = document.getElementById("categoryFilter");
+            const prodSelect = document.getElementById("prodCategory");
+            const currentFilter = select.value;
+            const currentProdCat = prodSelect.value;
+
+            select.innerHTML = '<option value="">Tüm Kategoriler</option>';
+            prodSelect.innerHTML = '';
+
+            db.categories.forEach(cat => {
+                select.innerHTML += `<option value="${cat}">${cat}</option>`;
+                prodSelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+            });
+            select.value = currentFilter;
+            prodSelect.value = currentProdCat;
+        }
+
+        function updateStats() {
+            const products = Object.values(db.products);
+            const totalItems = products.length;
+            const totalStock = products.reduce((sum, p) => sum + Number(p.stock), 0);
+            const criticalCount = products.filter(p => Number(p.stock) <= Number(p.critical)).length;
+            const totalValue = products.reduce((sum, p) => sum + (Number(p.stock) * Number(p.price)), 0);
+
+            document.getElementById("statTotalItems").innerText = totalItems;
+            document.getElementById("statTotalStock").innerText = totalStock;
+            document.getElementById("statCritical").innerText = criticalCount;
+            document.getElementById("statTotalValue").innerText = totalValue.toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " ₺";
+        }
+
+        // --- Ürün Tablosu ve Filtreleme ---
+        function renderTable() {
+            const tbody = document.getElementById("productTableBody");
+            const search = document.getElementById("searchInput").value.toLowerCase();
+            const catFilter = document.getElementById("categoryFilter").value;
+            tbody.innerHTML = "";
+
+            const entries = Object.entries(db.products);
+            if (entries.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-slate-400">Henüz kayıtlı ürün bulunmuyor.</td></tr>`;
+                return;
+            }
+
+            entries.sort((a,b) => a[1].name.localeCompare(b[1].name));
+
+            let count = 0;
+            entries.forEach(([id, p]) => {
+                if (search && !p.name.toLowerCase().includes(search) && !(p.code && p.code.toLowerCase().includes(search))) return;
+                if (catFilter && p.category !== catFilter) return;
+                if (onlyCriticalFilter && Number(p.stock) > Number(p.critical)) return;
+
+                count++;
+                const isCritical = Number(p.stock) <= Number(p.critical);
+                const totalVal = Number(p.stock) * Number(p.price);
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50/80 transition ${isCritical ? 'bg-amber-50/50' : ''}">
+                        <td class="p-3">
+                            <div class="font-semibold text-slate-900">${escapeHtml(p.name)}</div>
+                            <div class="text-xs text-slate-500 font-mono">${escapeHtml(p.code || 'Kodsuz')}</div>
+                        </td>
+                        <td class="p-3"><span class="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md text-xs font-medium">${escapeHtml(p.category)}</span></td>
+                        <td class="p-3">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold ${isCritical ? 'text-amber-600' : 'text-slate-800'}">${p.stock} ${p.unit}</span>
+                                ${isCritical ? '<span class="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded font-semibold" title="Kritik Seviye!"><i class="fa-solid fa-triangle-exclamation"></i> Kritik</span>' : ''}
+                            </div>
+                        </td>
+                        <td class="p-3">${Number(p.price).toLocaleString('tr-TR', {minimumFractionDigits: 2})} ₺</td>
+                        <td class="p-3 font-medium text-indigo-600">${totalVal.toLocaleString('tr-TR', {minimumFractionDigits: 2})} ₺</td>
+                        <td class="p-3 text-slate-600">${escapeHtml(p.location || '-')}</td>
+                        <td class="p-3 text-center">
+                            <div class="flex items-center justify-center gap-1">
+                                <button onclick="quickStockChange('${id}', 1)" class="w-7 h-7 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg text-xs font-bold transition" title="1 Arttır">+1</button>
+                                <button onclick="quickStockChange('${id}', -1)" class="w-7 h-7 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-bold transition" title="1 Azalt">-1</button>
+                                <button onclick="editProduct('${id}')" class="w-7 h-7 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs transition ml-1" title="Düzenle"><i class="fa-solid fa-pen"></i></button>
+                                <button onclick="deleteProduct('${id}')" class="w-7 h-7 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs transition" title="Sil"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            if (count === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-slate-400">Arama kriterine uygun ürün bulunamadı.</td></tr>`;
+            }
+        }
+
+        function filterCriticalStock() {
+            onlyCriticalFilter = !onlyCriticalFilter;
+            renderTable();
+        }
+
+        // --- Hareket Geçmişi Render ---
+        function renderHistory() {
+            const tbody = document.getElementById("historyTableBody");
+            tbody.innerHTML = "";
+            if (!db.history || db.history.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-slate-400">Henüz stok hareketi kaydedilmedi.</td></tr>`;
+                return;
+            }
+
+            const copyHistory = [...db.history].reverse();
+            copyHistory.forEach(h => {
+                let badgeColor = "bg-emerald-100 text-emerald-700";
+                if(h.type === "Çıkış") badgeColor = "bg-blue-100 text-blue-700";
+                if(h.type === "Fire") badgeColor = "bg-red-100 text-red-700";
+                if(h.type === "İade") badgeColor = "bg-amber-100 text-amber-700";
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50/80 transition">
+                        <td class="p-3 text-xs text-slate-500">${h.date}</td>
+                        <td class="p-3"><span class="${badgeColor} px-2.5 py-0.5 rounded-full text-xs font-semibold">${h.type}</span></td>
+                        <td class="p-3 font-medium text-slate-800">${escapeHtml(h.productName)}</td>
+                        <td class="p-3 font-bold">${h.qty > 0 ? '+' + h.qty : h.qty}</td>
+                        <td class="p-3 text-slate-600">${escapeHtml(h.note || '-')}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        // --- Ürün Ekleme / Düzenleme Modal İşlemleri ---
+        function openProductModal(id = null) {
+            document.getElementById("productForm").reset();
+            document.getElementById("editProductId").value = "";
+            if (id) {
+                document.getElementById("productModalTitle").innerText = "Ürün Düzenle";
+                const p = db.products[id];
+                document.getElementById("editProductId").value = id;
+                document.getElementById("prodName").value = p.name;
+                document.getElementById("prodCode").value = p.code || "";
+                document.getElementById("prodCategory").value = p.category;
+                document.getElementById("prodUnit").value = p.unit;
+                document.getElementById("prodStock").value = p.stock;
+                document.getElementById("prodPrice").value = p.price;
+                document.getElementById("prodCritical").value = p.critical;
+                document.getElementById("prodLocation").value = p.location || "";
+            } else {
+                document.getElementById("productModalTitle").innerText = "Yeni Ürün Ekle";
+            }
+            document.getElementById("productModal").classList.remove("hidden");
+        }
+        function closeProductModal() { document.getElementById("productModal").classList.add("hidden"); }
+
+        function generateBarcode() {
+            const randomCode = "PRD-" + Math.floor(100000 + Math.random() * 900000);
+            document.getElementById("prodCode").value = randomCode;
+        }
+
+        function addNewCategory() {
+            const catName = prompt("Yeni kategori adını girin:");
+            if (catName && catName.trim() !== "") {
+                const trimmed = catName.trim();
+                if (!db.categories.includes(trimmed)) {
+                    db.categories.push(trimmed);
+                    updateCategoriesUI();
+                    document.getElementById("prodCategory").value = trimmed;
+                }
+            }
+        }
+
+        function handleProductSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById("editProductId").value;
+            const name = document.getElementById("prodName").value.trim();
+            const code = document.getElementById("prodCode").value.trim();
+            const category = document.getElementById("prodCategory").value;
+            const unit = document.getElementById("prodUnit").value;
+            const stock = Number(document.getElementById("prodStock").value);
+            const price = Number(document.getElementById("prodPrice").value);
+            const critical = Number(document.getElementById("prodCritical").value);
+            const location = document.getElementById("prodLocation").value.trim();
+
+            if (id) {
+                db.products[id] = { ...db.products[id], name, code, category, unit, stock, price, critical, location };
+            } else {
+                const newId = "p_" + Date.now();
+                db.products[newId] = { name, code, category, unit, stock, price, critical, location };
+                db.history.push({
+                    date: new Date().toLocaleString('tr-TR'),
+                    type: "Giriş",
+                    productName: name,
+                    qty: stock,
+                    note: "İlk Açılış / Yeni Ürün"
+                });
+            }
+
+            saveData();
+            closeProductModal();
+        }
+
+        function editProduct(id) { openProductModal(id); }
+
+        function deleteProduct(id) {
+            if (confirm("Bu ürünü silmek istediğinize emin misiniz?")) {
+                delete db.products[id];
+                saveData();
+            }
+        }
+
+        function quickStockChange(id, amount) {
+            const p = db.products[id];
+            if (!p) return;
+            const newStock = Number(p.stock) + amount;
+            if (newStock < 0) {
+                alert("Stok miktarı sıfırın altına düşemez!");
+                return;
+            }
+            p.stock = newStock;
+            db.history.push({
+                date: new Date().toLocaleString('tr-TR'),
+                type: amount > 0 ? "Giriş" : "Çıkış",
+                productName: p.name,
+                qty: amount,
+                note: "Hızlı Tablo Güncelleme"
+            });
+            saveData();
+        }
+
+        // --- Stok Hareket İşlemleri ---
+        function openMovementModal() {
+            const select = document.getElementById("movProductId");
+            select.innerHTML = "";
+            const entries = Object.entries(db.products);
+            if (entries.length === 0) {
+                alert("Önce sisteme ürün eklemelisiniz!");
+                return;
+            }
+            entries.forEach(([id, p]) => {
+                select.innerHTML += `<option value="${id}">${p.name} (Mevcut: ${p.stock} ${p.unit})</option>`;
+            });
+            document.getElementById("movementModal").classList.remove("hidden");
+        }
+        function closeMovementModal() { document.getElementById("movementModal").classList.add("hidden"); }
+
+        function handleMovementSubmit(e) {
+            e.preventDefault();
+            const type = document.getElementById("movType").value;
+            const productId = document.getElementById("movProductId").value;
+            let qty = Number(document.getElementById("movQuantity").value);
+            const note = document.getElementById("movNote").value.trim();
+
+            const p = db.products[productId];
+            if (!p) return;
+
+            if (type === "Çıkış" || type === "Fire") {
+                if (p.stock < qty) {
+                    alert("Yetersiz stok! Mevcut stok: " + p.stock);
+                    return;
+                }
+                p.stock -= qty;
+                qty = -qty;
+            } else {
+                p.stock += qty;
+            }
+
+            db.history.push({
+                date: new Date().toLocaleString('tr-TR'),
+                type: type,
+                productName: p.name,
+                qty: qty,
+                note: note || "Detaylı İşlem"
+            });
+
+            saveData();
+            closeMovementModal();
+        }
+
+        // --- Sekme Yönetimi ---
+        function switchTab(tab) {
+            const pBtn = document.getElementById("tabProductsBtn");
+            const hBtn = document.getElementById("tabHistoryBtn");
+            const pCont = document.getElementById("tabProductsContent");
+            const hCont = document.getElementById("tabHistoryContent");
+
+            if (tab === 'products') {
+                pBtn.className = "px-6 py-3 font-semibold text-sm border-b-2 border-indigo-600 text-indigo-600 transition flex items-center gap-2";
+                hBtn.className = "px-6 py-3 font-semibold text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition flex items-center gap-2";
+                pCont.classList.remove("hidden");
+                hCont.classList.add("hidden");
+            } else {
+                hBtn.className = "px-6 py-3 font-semibold text-sm border-b-2 border-indigo-600 text-indigo-600 transition flex items-center gap-2";
+                pBtn.className = "px-6 py-3 font-semibold text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition flex items-center gap-2";
+                hCont.classList.remove("hidden");
+                pCont.classList.add("hidden");
+            }
+        }
+
+        function toggleDropdown(id) {
+            const el = document.getElementById(id);
+            el.classList.toggle("hidden");
+        }
+
+        // --- Dışa / İçe Aktarım ---
+        function exportExcel() {
+            let csv = "\ufeffÜrün Adı;Barkod;Kategori;Miktar;Birim;Birim Fiyat;Raf\n";
+            Object.values(db.products).forEach(p => {
+                csv += `"${p.name}","${p.code || ''}","${p.category}",${p.stock},"${p.unit}",${p.price},"${p.location || ''}"\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "stok_envanter_raporu.csv";
+            a.click();
+        }
+
+        function exportJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db, null, 2));
+            const a = document.createElement("a");
+            a.href = dataStr;
+            a.download = "stokpro_yedek_" + new Date().toISOString().slice(0,10) + ".json";
+            a.click();
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (parsed.products) {
+                        db = parsed;
+                        saveData();
+                        alert("Yedek başarıyla yüklendi!");
+                    } else {
+                        alert("Geçersiz yedek dosyası!");
+                    }
+                } catch(err) {
+                    alert("Dosya okunurken hata oluştu.");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        window.onclick = function(event) {
+            if (!event.target.closest('button')) {
+                document.querySelectorAll('#reportDropdown').forEach(el => el.classList.add('hidden'));
+            }
+        }
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StokPro - Akıllı Stok & Envanter Takip Sistemi (Bulut Senkronize)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Üst Menü / Navbar -->
+    <header class="bg-indigo-600 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-white text-indigo-600 p-2 rounded-lg shadow font-bold text-xl">
+                    <i class="fa-solid fa-boxes-stacked"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight">StokPro</h1>
+                    <p class="text-xs text-indigo-200">Bulut Tabanlı Envanter Yönetimi</p>
+                </div>
+            </div>
+
+            <!-- Bulut Bağlantı Durumu & Ayar Butonu -->
+            <div class="flex items-center gap-3">
+                <div id="cloudStatusBadge" class="flex items-center gap-2 bg-indigo-700 px-3 py-1.5 rounded-full text-xs font-medium border border-indigo-500">
+                    <span id="cloudStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                    <span id="cloudStatusText">Çevrimdışı (Yerel Mod)</span>
+                </div>
+                <button onclick="openCloudModal()" class="bg-indigo-700 hover:bg-indigo-800 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-2 border border-indigo-500">
+                    <i class="fa-solid fa-cloud"></i> Bulut Ayarları
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Ana İçerik Alanı -->
+    <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+
+        <!-- Dashboard Özet Kartları -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase">Toplam Ürün Çeşidi</p>
+                    <h3 id="statTotalItems" class="text-2xl font-bold text-slate-900 mt-1">0</h3>
+                </div>
+                <div class="bg-blue-50 text-blue-600 p-3 rounded-lg"><i class="fa-solid fa-box text-xl"></i></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase">Toplam Stok Adedi</p>
+                    <h3 id="statTotalStock" class="text-2xl font-bold text-slate-900 mt-1">0</h3>
+                </div>
+                <div class="bg-emerald-50 text-emerald-600 p-3 rounded-lg"><i class="fa-solid fa-layer-group text-xl"></i></div>
+            </div>
+            <div onclick="filterCriticalStock()" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer hover:border-amber-400 transition group">
+                <div>
+                    <p class="text-xs font-semibold text-amber-600 uppercase">Kritik Stok Uyarıları</p>
+                    <h3 id="statCritical" class="text-2xl font-bold text-amber-600 mt-1">0</h3>
+                </div>
+                <div class="bg-amber-50 text-amber-600 p-3 rounded-lg group-hover:scale-110 transition"><i class="fa-solid fa-triangle-exclamation text-xl"></i></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase">Toplam Envanter Değeri</p>
+                    <h3 id="statTotalValue" class="text-2xl font-bold text-indigo-600 mt-1">0.00 ₺</h3>
+                </div>
+                <div class="bg-indigo-50 text-indigo-600 p-3 rounded-lg"><i class="fa-solid fa-wallet text-xl"></i></div>
+            </div>
+        </div>
+
+        <!-- Üst İşlem Çubuğu (Arama, Filtreleme, Ekleme Butonları) -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex flex-wrap items-center gap-3 flex-1">
+                <!-- Arama Kutusu -->
+                <div class="relative min-w-[240px] flex-1 sm:flex-none">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400"><i class="fa-solid fa-search"></i></span>
+                    <input type="text" id="searchInput" oninput="renderTable()" placeholder="Ürün adı, kod veya barkod ara..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <!-- Kategori Filtresi -->
+                <select id="categoryFilter" onchange="renderTable()" class="py-2 px-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                    <option value="">Tüm Kategoriler</option>
+                </select>
+            </div>
+
+            <!-- Sağ İşlem Butonları -->
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="openProductModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow-sm">
+                    <i class="fa-solid fa-plus"></i> Yeni Ürün Ekle
+                </button>
+                <button onclick="openMovementModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow-sm">
+                    <i class="fa-solid fa-right-left"></i> Stok Giriş / Çıkış
+                </button>
+                <!-- Yedekleme ve Rapor Menüsü -->
+                <div class="relative">
+                    <button onclick="toggleDropdown('reportDropdown')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                        <i class="fa-solid fa-file-arrow-down"></i> Rapor & Yedek <i class="fa-solid fa-chevron-down text-xs"></i>
+                    </button>
+                    <div id="reportDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-10 py-1">
+                        <a href="#" onclick="exportExcel(); return false;" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-file-excel text-emerald-600 mr-2"></i> Excel / CSV İndir</a>
+                        <a href="#" onclick="exportJSON(); return false;" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-file-code text-blue-600 mr-2"></i> JSON Yedek Al</a>
+                        <label class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                            <i class="fa-solid fa-file-arrow-up text-amber-600 mr-2"></i> Yedek Yükle
+                            <input type="file" accept=".json" onchange="importJSON(event)" class="hidden">
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ana Sekmeler (Stok Listesi & Hareket Geçmişi) -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="border-b border-slate-200 flex">
+                <button onclick="switchTab('products')" id="tabProductsBtn" class="px-6 py-3 font-semibold text-sm border-b-2 border-indigo-600 text-indigo-600 transition flex items-center gap-2">
+                    <i class="fa-solid fa-boxes-stacked"></i> Stok Envanteri
+                </button>
+                <button onclick="switchTab('history')" id="tabHistoryBtn" class="px-6 py-3 font-semibold text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Stok Hareket Geçmişi
+                </button>
+            </div>
+
+            <!-- Sekme 1: Ürünler Tablosu -->
+            <div id="tabProductsContent" class="p-4 overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase bg-slate-50/50">
+                            <th class="p-3">Ürün Adı / Kod</th>
+                            <th class="p-3">Kategori</th>
+                            <th class="p-3">Miktar</th>
+                            <th class="p-3">Birim Fiyat</th>
+                            <th class="p-3">Toplam Değer</th>
+                            <th class="p-3">Raf Konumu</th>
+                            <th class="p-3 text-center">İşlemler</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productTableBody" class="divide-y divide-slate-100 text-sm">
+                        <!-- Dinamik Dolacak -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Sekme 2: Hareket Geçmişi Tablosu -->
+            <div id="tabHistoryContent" class="p-4 overflow-x-auto hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase bg-slate-50/50">
+                            <th class="p-3">Tarih / Saat</th>
+                            <th class="p-3">İşlem Türü</th>
+                            <th class="p-3">Ürün Adı</th>
+                            <th class="p-3">Miktar</th>
+                            <th class="p-3">Cari / Açıklama</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody" class="divide-y divide-slate-100 text-sm">
+                        <!-- Dinamik Dolacak -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal: Bulut Ayarları (Firebase) -->
+    <div id="cloudModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div class="bg-indigo-600 px-6 py-4 text-white flex justify-between items-center">
+                <h3 class="font-bold text-lg"><i class="fa-solid fa-cloud-arrow-up mr-2"></i> Firebase Bulut Ayarları</h3>
+                <button onclick="closeCloudModal()" class="text-indigo-200 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <p class="text-xs text-slate-600">
+                    Tüm cihazlarınız arasında canlı senkronizasyon için Firebase Realtime Database bilgilerinizi girin ve ortak bir kanal kodu belirleyin.
+                </p>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Depo / Şube Kanal Kodu</label>
+                    <input type="text" id="cloudChannel" placeholder="Örn: ana-depo-sube-1" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-[11px] text-slate-500 mt-1">Aynı kanalı kullanan tüm telefon ve bilgisayarlar aynı stoku görür.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Akıllı Config Yapıştır (JSON veya JS)</label>
+                    <textarea id="cloudConfigRaw" rows="4" placeholder="firebaseConfig = { apiKey: '...', ... } veya JSON formatını buraya yapıştırın" class="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-600 uppercase mb-1">API Key</label>
+                        <input type="text" id="cfgApiKey" class="w-full p-2 border border-slate-300 rounded-lg text-xs outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-600 uppercase mb-1">Project ID</label>
+                        <input type="text" id="cfgProjectId" class="w-full p-2 border border-slate-300 rounded-lg text-xs outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-600 uppercase mb-1">Database URL</label>
+                    <input type="text" id="cfgDbUrl" class="w-full p-2 border border-slate-300 rounded-lg text-xs outline-none">
+                </div>
+                <div class="flex items-center justify-between pt-2">
+                    <button onclick="disconnectCloud()" class="text-red-600 hover:text-red-700 text-xs font-semibold px-3 py-2"><i class="fa-solid fa-power-off mr-1"></i> Bağlantıyı Kes</button>
+                    <div class="flex gap-2">
+                        <button onclick="closeCloudModal()" class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm hover:bg-slate-50 font-medium">İptal</button>
+                        <button onclick="saveAndConnectCloud()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow">Bağlan ve Senkronize Et</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Ürün Ekle / Düzenle -->
+    <div id="productModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+            <div class="bg-indigo-600 px-6 py-4 text-white flex justify-between items-center">
+                <h3 id="productModalTitle" class="font-bold text-lg">Yeni Ürün Ekle</h3>
+                <button onclick="closeProductModal()" class="text-indigo-200 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form id="productForm" onsubmit="handleProductSubmit(event)" class="p-6 space-y-4">
+                <input type="hidden" id="editProductId">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ürün Adı *</label>
+                        <input type="text" id="prodName" required class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ürün Kodu / Barkod</label>
+                        <div class="flex gap-1">
+                            <input type="text" id="prodCode" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <button type="button" onclick="generateBarcode()" class="bg-slate-100 hover:bg-slate-200 px-3 rounded-lg text-slate-600 text-xs border border-slate-300" title="Kod Üret"><i class="fa-solid fa-barcode"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Kategori</label>
+                        <div class="flex gap-1">
+                            <select id="prodCategory" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none">
+                                <option value="Genel">Genel</option>
+                            </select>
+                            <button type="button" onclick="addNewCategory()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 rounded-lg text-xs font-bold border border-indigo-200" title="Yeni Kategori"><i class="fa-solid fa-plus"></i></button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Birim</label>
+                        <select id="prodUnit" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none">
+                            <option value="Adet">Adet</option>
+                            <option value="Metre">Metre</option>
+                            <option value="Kilogram">Kilogram</option>
+                            <option value="Kutu">Kutu</option>
+                            <option value="Paket">Paket</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Başlangıç Miktarı</label>
+                        <input type="number" id="prodStock" min="0" value="0" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Birim Fiyat (₺)</label>
+                        <input type="number" id="prodPrice" step="0.01" min="0" value="0" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-amber-600 uppercase mb-1">Kritik Sınır</label>
+                        <input type="number" id="prodCritical" min="0" value="5" class="w-full p-2.5 border border-amber-300 rounded-lg text-sm outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Raf / Depo Konumu</label>
+                    <input type="text" id="prodLocation" placeholder="Örn: Raf A-3" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none">
+                </div>
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="closeProductModal()" class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Detaylı Stok Giriş / Çıkış -->
+    <div id="movementModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
